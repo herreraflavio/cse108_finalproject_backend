@@ -9,6 +9,7 @@ const User = require("./models/User");
 require("dotenv").config(); // <<< Load env variables
 
 const app = express();
+app.set("trust proxy", 1);
 
 // Allow CORS for localhost:3000
 app.use(
