@@ -40,10 +40,10 @@ app.use(
       mongoUrl: process.env.MONGO_URI,
     }),
     cookie: {
-      secure: false, // true if HTTPS
+      secure: true, // <-- important: because Render is HTTPS
       httpOnly: true,
-      maxAge: 1000 * 60 * 60 * 24, // 1 day
-      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 24,
+      sameSite: "none", // <-- important: allow cross-origin cookie sending
     },
   })
 );
