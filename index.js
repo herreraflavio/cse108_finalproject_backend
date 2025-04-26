@@ -113,5 +113,7 @@ app.get("/me", async (req, res) => {
   }
 });
 
-// Start server
-app.listen(9000, () => console.log("Server running on http://localhost:9000"));
+const PORT = process.env.PORT || 9000;
+app.listen(PORT, () =>
+  console.log(`Server running on http://localhost:${PORT}`)
+);
