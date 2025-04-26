@@ -11,6 +11,8 @@ require("dotenv").config(); // <<< Load env variables
 const app = express();
 app.set("trust proxy", 1);
 
+app.use("/assets", express.static(path.join(__dirname, "assets")));
+
 // Allow CORS for localhost:3000
 app.use(
   cors({
