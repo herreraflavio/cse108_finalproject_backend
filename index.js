@@ -6,6 +6,7 @@ const bcrypt = require("bcrypt");
 const cookieParser = require("cookie-parser");
 const cors = require("cors"); // <<< Add this
 const User = require("./models/User");
+const path = require("path");
 require("dotenv").config(); // <<< Load env variables
 
 const app = express();
