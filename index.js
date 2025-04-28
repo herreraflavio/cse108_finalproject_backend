@@ -19,7 +19,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
-      "https://cse108-finalproject-frontend.vercel.app/",
+      "https://cse108-finalproject-frontend.vercel.app",
     ], // Only allow this origin
     credentials: true, // Allow cookies to be sent
   })
