@@ -17,7 +17,10 @@ app.use("/assets", express.static(path.join(__dirname, "assets")));
 // Allow CORS for localhost:3000
 app.use(
   cors({
-    origin: "http://localhost:3000", // Only allow this origin
+    origin: [
+      "http://localhost:3000",
+      "https://cse108-finalproject-frontend.vercel.app/",
+    ], // Only allow this origin
     credentials: true, // Allow cookies to be sent
   })
 );
