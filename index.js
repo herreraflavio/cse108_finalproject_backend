@@ -2,32 +2,51 @@ const express = require("express");
 const mongoose = require("mongoose");
 const session = require("express-session");
 const MongoStore = require("connect-mongo");
-const bcrypt = require("bcrypt");
 const cookieParser = require("cookie-parser");
-const cors = require("cors"); // <<< Add this
-const User = require("./models/User");
+const cors = require("cors");
 const path = require("path");
-require("dotenv").config(); // <<< Load env variables
+const http = require("http");
+const { Server } = require("socket.io");
+const sharedSession = require("express-socket.io-session");
+const jwt = require("jsonwebtoken");
+require("dotenv").config();
 
-// … same requires, dotenv, etc.
+// Models
+const User = require("./models/User");
 
+// Express setup
 const app = express();
-app.set("trust proxy", 1);
+app.set("trust proxy", 1); // for cookies on services like Render
 
-// 1) CORS & preflight
-const allowed = [
-  "http://localhost:3000",
-  "https://cse108-finalproject-frontend.vercel.app",
-];
-app.use(cors({ origin: allowed, credentials: true }));
+// HTTP + WebSocket server
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://localhost:3000",
+      "https://cse108-finalproject-frontend.vercel.app",
+    ],
+    credentials: true,
+  },
+});
 
-// 2) static, body, cookies
+// CORS
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "https://cse108-finalproject-frontend.vercel.app",
+    ],
+    credentials: true,
+  })
+);
+
+// Middleware
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 app.use(express.json());
 app.use(cookieParser());
 
-// 3) DB + sessions
-// Connect to MongoDB Atlas
+// MongoDB connection
 mongoose
   .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -36,29 +55,27 @@ mongoose
   .then(() => console.log("Connected to MongoDB Atlas"))
   .catch((err) => console.error("MongoDB connection error:", err));
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-    cookie: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // ← lax works over HTTP in dev
-      maxAge: 1000 * 60 * 60 * 24,
-    },
-  })
-);
+// Session middleware
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
+  cookie: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    maxAge: 1000 * 60 * 60 * 24,
+  },
+});
 
-// Models
-const UserSchema = require("./models/User");
+app.use(sessionMiddleware);
+io.use(sharedSession(sessionMiddleware, { autoSave: true }));
 
-// Middleware
+// Protect routes
 const ensureAuth = (req, res, next) => {
-  if (!req.session.userId) {
+  if (!req.session.userId)
     return res.status(401).json({ error: "Not authenticated" });
-  }
   next();
 };
 
@@ -67,102 +84,83 @@ const testRoutes = require("./routes/test");
 const Register = require("./routes/auth/Register");
 const Login = require("./routes/auth/Login");
 const Logout = require("./routes/auth/Logout");
+const Profile = require("./routes/auth/Profile");
 const Post = require("./routes/posts/Post");
 const Follow = require("./routes/user/Follow");
 const Feed = require("./routes/user/Feed");
+const Recommendations = require("./routes/search/Recomendations");
+const UserProfile = require("./routes/search/UserProfile");
 
 app.use("/test", ensureAuth, testRoutes);
 app.use("/auth/register", Register);
 app.use("/auth/login", Login);
-app.use("/auth/logout", Logout);
-app.use("/posts/post", Post);
-app.use("/user/follow", Follow);
-app.use("/user/feed", Feed);
+app.use("/auth/logout", ensureAuth, Logout);
+app.use("/auth/profile", ensureAuth, Profile);
+app.use("/posts/post", ensureAuth, Post);
+app.use("/user/follow", ensureAuth, Follow);
+app.use("/user/feed", ensureAuth, Feed);
+app.use("/search/recommendations", ensureAuth, Recommendations);
+app.use("/search/userprofile", ensureAuth, UserProfile);
 
-app.get("/api/profile", async (req, res) => {
-  if (!req.session.userId) return res.status(401).send("Not authenticated.");
-
-  const user = await User.findById(req.session.userId).select("-password");
-  res.json(user);
-});
-
-app.post("/api/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie("connect.sid");
-    res.send("Logged out.");
-  });
-});
-
+// Simple user info route
 app.get("/me", async (req, res) => {
-  if (!req.session.userId) {
-    return res.status(401).send("Not authenticated.");
-  }
+  if (!req.session.userId) return res.status(401).send("Not authenticated.");
 
   try {
     const user = await User.findById(req.session.userId).select(
       "id username role"
     );
-    if (!user) {
-      return res.status(404).send("User not found.");
-    }
-
-    res.json({
-      id: user._id,
-      username: user.username,
-      role: user.role,
-    });
+    if (!user) return res.status(404).send("User not found.");
+    res.json({ id: user._id, username: user.username, role: user.role });
   } catch (err) {
     console.error(err);
     res.status(500).send("Server error.");
   }
 });
 
-// SEARCH USERS
-
-app.get("/api/search-users", ensureAuth, async (req, res) => {
+// === NEW: JWT middleware for sockets ===
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    return next(new Error("unauthorized"));
+  }
   try {
-    // 1) grab the query string
-    const q = (req.query.q || "").trim();
-    console.log("search term:", q);
-
-    // 2) build your case‐insensitive regex
-    const regex = new RegExp(q, "i");
-
-    // 3) find users whose username matches
-    const users = await UserSchema.find({ username: regex }).select(
-      "username profilePicture"
-    ); // include whatever fields you need
-
-    console.log("search result:", users);
-
-    // 4) send them back
-    return res.json({ users });
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    socket.userId = payload.id; // attach to socket
+    next();
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server error" });
+    next(new Error("invalid_token"));
   }
 });
 
-// FOLLOW RECOMMENDATIONS
-// GET /api/follow-recommendations
-app.get("/api/follow-recommendations", ensureAuth, async (req, res) => {
-  try {
-    const currentUserId = new mongoose.Types.ObjectId(req.session.userId);
+// Socket.IO logic (uses socket.userId instead of session)
+io.on("connection", (socket) => {
+  const userId = socket.userId;
+  console.log(`✅ User ${userId} connected via Socket.IO`);
 
-    const recommendations = await UserSchema.aggregate([
-      { $match: { _id: { $ne: currentUserId } } },
-      { $sample: { size: 5 } },
-      { $project: { password: 0 } },
-    ]);
+  socket.join(userId);
 
-    res.json({ users: recommendations });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
-  }
+  socket.emit("hello", {
+    message: `Hello, user ${userId}!`,
+    timestamp: new Date().toISOString(),
+  });
+
+  socket.on("sendDM", ({ toUserId, message }) => {
+    const payload = {
+      from: userId,
+      message,
+      timestamp: new Date().toISOString(),
+    };
+    io.to(toUserId).emit("receiveDM", payload);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`User ${userId} disconnected`);
+  });
 });
 
+// Start server
 const PORT = process.env.PORT || 9000;
-app.listen(PORT, () =>
-  console.log(`Server running on http://localhost:${PORT}`)
+server.listen(PORT, () =>
+  console.log(`Server running at http://localhost:${PORT}`)
 );
