@@ -21,16 +21,6 @@ const allowed = [
 ];
 app.use(cors({ origin: allowed, credentials: true }));
 
-// app.use(
-//   cors({
-//     origin: [
-//       "http://localhost:3000",
-//       "https://cse108-finalproject-frontend.vercel.app",
-//     ], // Only allow this origin
-//     credentials: true, // Allow cookies to be sent
-//   })
-// );
-
 // 2) static, body, cookies
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 app.use(express.json());
@@ -45,21 +35,6 @@ mongoose
   })
   .then(() => console.log("Connected to MongoDB Atlas"))
   .catch((err) => console.error("MongoDB connection error:", err));
-
-// app.use(
-//   session({
-//     secret: process.env.SESSION_SECRET,
-//     resave: false,
-//     saveUninitialized: false,
-//     store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
-//     cookie: {
-//       secure: process.env.NODE_ENV === "production",
-//       httpOnly: true,
-//       sameSite: "none",
-//       maxAge: 1000 * 60 * 60 * 24,
-//     },
-//   })
-// );
 
 app.use(
   session({
@@ -76,34 +51,33 @@ app.use(
   })
 );
 
+// Models
 const UserSchema = require("./models/User");
 
-// Routes
-app.post("/api/register", async (req, res) => {
-  const { username, role, password } = req.body;
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  try {
-    const user = new User({ username, role, password: hashedPassword });
-    await user.save();
-    res.send("User registered.");
-  } catch (err) {
-    res.status(400).send("Error creating user.");
+// Middleware
+const ensureAuth = (req, res, next) => {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Not authenticated" });
   }
-});
+  next();
+};
 
-app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body;
+// Routes
+const testRoutes = require("./routes/test");
+const Register = require("./routes/auth/Register");
+const Login = require("./routes/auth/Login");
+const Logout = require("./routes/auth/Logout");
+const Post = require("./routes/posts/Post");
+const Follow = require("./routes/user/Follow");
+const Feed = require("./routes/user/Feed");
 
-  const user = await UserSchema.findOne({ username });
-  if (!user) return res.status(400).send("User not found.");
-
-  const validPassword = await bcrypt.compare(password, user.password);
-  if (!validPassword) return res.status(401).send("Invalid credentials.");
-
-  req.session.userId = user._id;
-  res.send("Logged in.");
-});
+app.use("/test", ensureAuth, testRoutes);
+app.use("/auth/register", Register);
+app.use("/auth/login", Login);
+app.use("/auth/logout", Logout);
+app.use("/posts/post", Post);
+app.use("/user/follow", Follow);
+app.use("/user/feed", Feed);
 
 app.get("/api/profile", async (req, res) => {
   if (!req.session.userId) return res.status(401).send("Not authenticated.");
@@ -143,20 +117,8 @@ app.get("/me", async (req, res) => {
   }
 });
 
-// auth-protection middleware
-const ensureAuth = (req, res, next) => {
-  if (!req.session.userId) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-  next();
-};
-
 // SEARCH USERS
-// GET /api/search-users?q=flavio
-// app.get("/api/search-users", ensureAuth, async (req, res) => {
 
-//   console.log("all users:", await UserSchema.find().select("username"));
-// });
 app.get("/api/search-users", ensureAuth, async (req, res) => {
   try {
     // 1) grab the query string
@@ -183,20 +145,22 @@ app.get("/api/search-users", ensureAuth, async (req, res) => {
 
 // FOLLOW RECOMMENDATIONS
 // GET /api/follow-recommendations
-// app.get("/api/follow-recommendations", ensureAuth, async (req, res) => {
-//   try {
-//     // pick 5 random users that aren't the current user
-//     const recommendations = await User.aggregate([
-//       { $match: { _id: { $ne: mongoose.Types.ObjectId(req.session.userId) } } },
-//       { $sample: { size: 5 } },
-//       { $project: { password: 0 } }, // strip out password
-//     ]);
-//     res.json({ users: recommendations });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
+app.get("/api/follow-recommendations", ensureAuth, async (req, res) => {
+  try {
+    const currentUserId = new mongoose.Types.ObjectId(req.session.userId);
+
+    const recommendations = await UserSchema.aggregate([
+      { $match: { _id: { $ne: currentUserId } } },
+      { $sample: { size: 5 } },
+      { $project: { password: 0 } },
+    ]);
+
+    res.json({ users: recommendations });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 const PORT = process.env.PORT || 9000;
 app.listen(PORT, () =>
