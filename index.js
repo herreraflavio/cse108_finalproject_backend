@@ -87,6 +87,7 @@ const Logout = require("./routes/auth/Logout");
 const Profile = require("./routes/auth/Profile");
 const Post = require("./routes/posts/Post");
 const Follow = require("./routes/user/Follow");
+const Unfollow = require("./routes/user/Unfollow");
 const Feed = require("./routes/user/Feed");
 const Recommendations = require("./routes/search/Recomendations");
 const UserProfile = require("./routes/search/UserProfile");
@@ -98,9 +99,11 @@ app.use("/auth/logout", ensureAuth, Logout);
 app.use("/auth/profile", ensureAuth, Profile);
 app.use("/posts/post", ensureAuth, Post);
 app.use("/user/follow", ensureAuth, Follow);
+app.use("/user/unfollow", ensureAuth, Unfollow);
 app.use("/user/feed", ensureAuth, Feed);
 app.use("/search/recommendations", ensureAuth, Recommendations);
 app.use("/search/userprofile", ensureAuth, UserProfile);
+app.use("/search/self", ensureAuth, UserProfile);
 
 // Simple user info route
 app.get("/me", async (req, res) => {
@@ -111,7 +114,7 @@ app.get("/me", async (req, res) => {
       "id username role"
     );
     if (!user) return res.status(404).send("User not found.");
-    res.json({ id: user._id, username: user.username, role: user.role });
+    res.json({ _id: user._id, username: user.username, role: user.role });
   } catch (err) {
     console.error(err);
     res.status(500).send("Server error.");
