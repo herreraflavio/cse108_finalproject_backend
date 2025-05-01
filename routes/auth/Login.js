@@ -39,7 +39,7 @@ router.post("/", async (req, res) => {
 
   // 2) Issue a short‐lived JWT just for Socket.IO:
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "1h",
+    expiresIn: "24h",
   });
 
   // 3) Return both session cookie *and* the token
