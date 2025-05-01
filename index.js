@@ -25,6 +25,7 @@ const io = new Server(server, {
   cors: {
     origin: [
       "http://localhost:3000",
+      "https://cse108.flavioherrera.com",
       "https://cse108-finalproject-frontend.vercel.app",
     ],
     credentials: true,
@@ -38,6 +39,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
+      "https://cse108.flavioherrera.com",
       "https://cse108-finalproject-frontend.vercel.app",
     ],
     credentials: true,
