@@ -11,6 +11,11 @@ const MessageSchema = new Schema(
       ref: "User",
       required: true,
     },
+    // NEW – array of S3 URLs
+    imageUrls: {
+      type: [String],
+      default: [], // always present, even if no images
+    },
     content: {
       type: String,
       required: true,

@@ -280,6 +280,7 @@ app.use(
   require("./routes/search/UserProfile")
 );
 app.use("/search/self", ensureAuth, require("./routes/search/UserProfile"));
+app.use("/uploads/images", require("./routes/uploads/Images"));
 
 // Simple “who am I?” endpoint
 app.get("/me", ensureAuth, async (req, res) => {
@@ -305,7 +306,7 @@ app.get("/api/chats/:userId", ensureAuth, async (req, res) => {
   const otherUserId = req.params.userId;
   const me = req.session.userId;
   const page = parseInt(req.query.page, 10) || 1;
-  const limit = 20;
+  const limit = 50;
 
   try {
     // 1) Load the conversation, populating each message.sender
@@ -333,6 +334,7 @@ app.get("/api/chats/:userId", ensureAuth, async (req, res) => {
     const formatted = pageOfMsgs.reverse().map((m) => ({
       sender: m.sender, // { _id, username, profile_picture }
       content: m.content,
+      imageUrls: m.imageUrls,
       timestamp: m.timestamp,
     }));
 
@@ -417,14 +419,17 @@ io.on("connection", (socket) => {
     .catch(console.error);
 
   // handle sending a DM
-  socket.on("sendDM", async ({ toUserId, content }) => {
+  socket.on("sendDM", async ({ toUserId, content, imageUrls }) => {
     try {
       // 1) Persist the raw message to MongoDB
       const msgDoc = {
         sender: me,
         content,
+        imageUrls,
         timestamp: new Date(),
       };
+
+      console.log(msgDoc);
 
       await Conversation.findOneAndUpdate(
         { participants: { $all: [me, toUserId] } },
@@ -445,6 +450,7 @@ io.on("connection", (socket) => {
           profile_picture: senderProfile.profile_picture,
         },
         content,
+        imageUrls,
         timestamp: msgDoc.timestamp,
       };
 
