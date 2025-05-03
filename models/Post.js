@@ -3,11 +3,11 @@ const mongoose = require("mongoose");
 const PostSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   content: { type: String, required: true },
-  likes: { type: Number, default: 0 },
+  likes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],  // Changed from Number to an array of user references
   comments: [
     {
       user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      content: String,
+      content: { type: String, required: true },
       timestamp: { type: Date, default: Date.now },
     },
   ],
