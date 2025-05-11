@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Post = require("../../models/Post");
 
+// Route to create a new post
 router.post("/", async (req, res) => {
   try {
     const { content } = req.body;
@@ -27,6 +28,67 @@ router.post("/", async (req, res) => {
   } catch (err) {
     console.error("Error creating post:", err);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Route to like/unlike a post
+router.post("/like/:postId", async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId } = req.body; // Assume userId is passed in request body (from session or token)
+
+    // Find the post
+    const post = await Post.findById(postId);
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Check if the user already liked the post
+    if (post.likes.includes(userId)) {
+      // Unlike the post
+      post.likes = post.likes.filter((like) => like.toString() !== userId);
+    } else {
+      // Like the post
+      post.likes.push(userId);
+    }
+
+    await post.save();
+    res.status(200).json({ message: "Post updated", post });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to like/unlike post", error: err });
+  }
+});
+
+// Route to add a comment to a post
+router.post("/comment/:postId", async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const { userId, content } = req.body; // Assume userId and content are passed in request body
+
+    // Find the post
+    const post = await Post.findById(postId);
+
+    if (!post) {
+      return res.status(404).json({ message: "Post not found" });
+    }
+
+    // Create the comment
+    const newComment = {
+      userId,
+      content,
+      timestamp: new Date(),
+    };
+
+    // Add the comment to the post
+    post.comments.push(newComment);
+
+    await post.save();
+    res.status(200).json({ message: "Comment added", post });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Failed to add comment", error: err });
   }
 });
 
