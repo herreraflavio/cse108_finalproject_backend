@@ -126,7 +126,7 @@ app.use(
   require("./routes/search/UserProfile")
 );
 app.use("/search/self", ensureAuth, require("./routes/search/UserProfile"));
-app.use("/uploads/images", ensureAuth, require("./routes/uploads/Images"));
+app.use("/uploads/images", require("./routes/uploads/Images"));
 
 // Simple “who am I?” endpoint
 app.get("/me", ensureAuth, async (req, res) => {
