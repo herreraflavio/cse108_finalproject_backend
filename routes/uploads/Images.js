@@ -64,6 +64,8 @@
 
 // module.exports = router;
 // routes/uploads/Images.js
+// At the VERY top of the file or in your server entrypoint (index.js)
+require("dotenv").config();
 
 const express = require("express");
 const multer = require("multer");
@@ -75,10 +77,33 @@ const path = require("path");
 
 const router = express.Router();
 
+/* ─── Debugging .env ────────────────────────────────────────────── */
 const BUCKET = process.env.AWS_S3_BUCKET;
+const REGION = process.env.AWS_REGION;
+const ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID;
+const SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+
+console.log("ENVIRONMENT DEBUG:");
+console.log("  AWS_S3_BUCKET       =", BUCKET);
+console.log("  AWS_REGION          =", REGION);
+console.log("  AWS_ACCESS_KEY_ID   =", ACCESS_KEY ? "[OK]" : "[MISSING]");
+console.log("  AWS_SECRET_ACCESS_KEY =", SECRET_KEY ? "[OK]" : "[MISSING]");
+console.log("────────────────────────────────────────────");
+
+/* ─── Sanity check ─────────────────────────────────────────────── */
+if (!BUCKET || typeof BUCKET !== "string") {
+  throw new Error("Missing or invalid AWS_S3_BUCKET in .env");
+}
+if (!REGION || typeof REGION !== "string") {
+  throw new Error("Missing or invalid AWS_REGION in .env");
+}
+if (!ACCESS_KEY || !SECRET_KEY) {
+  throw new Error("Missing AWS credentials in .env");
+}
+
+/* ─── multer config ─────────────────────────────────────────────── */
 const MAX_MB = 25;
 const ALLOW = ["image/png", "image/jpeg", "image/webp"];
-
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_MB * 1024 * 1024 },
@@ -88,20 +113,28 @@ const upload = multer({
       : cb(new Error("Only PNG, JPEG or WebP allowed")),
 });
 
-// — GET a signed URL for any key under /uploads/images —
-//    e.g. GET /uploads/images/path/to/my.png
-// GET  /uploads/images/<anything-you-like>
+/* ─── GET a signed URL for image ────────────────────────────────── */
 router.get("/*key", async (req, res) => {
   try {
-    const key = req.params.key; // e.g.  "user123/avatar.png"
+    const key = Array.isArray(req.params.key)
+      ? req.params.key.join("/")
+      : req.params.key;
 
-    if (!key || key.includes("..") || key.length > 512) {
+    console.log("[GET SIGNED URL] Key:", key);
+
+    if (
+      !key ||
+      typeof key !== "string" ||
+      key.includes("..") ||
+      key.length > 512
+    ) {
       return res.status(400).json({ error: "Invalid key." });
     }
 
     const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
-    const signedUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 }); // 60 s
+    const signedUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 });
 
+    console.log("[SIGNED URL GENERATED]", signedUrl);
     res.json({ signedUrl });
   } catch (err) {
     console.error("Signed-URL error:", err);
@@ -109,8 +142,7 @@ router.get("/*key", async (req, res) => {
   }
 });
 
-// — POST up to 10 images and return their keys —
-//    field name must be "files"
+/* ─── POST image uploads ────────────────────────────────────────── */
 router.post("/", upload.array("files", 10), async (req, res) => {
   try {
     if (!req.files?.length) {
@@ -121,6 +153,8 @@ router.post("/", upload.array("files", 10), async (req, res) => {
       req.files.map(async (file) => {
         const ext = path.extname(file.originalname).toLowerCase();
         const key = `${req.user?.id || "anon"}/${uuid()}${ext}`;
+
+        console.log("[UPLOAD]", key, file.mimetype, file.size, "bytes");
 
         await s3.send(
           new PutObjectCommand({
@@ -137,7 +171,7 @@ router.post("/", upload.array("files", 10), async (req, res) => {
 
     res.json({ uploads });
   } catch (err) {
-    console.error("Upload error:", err);
+    console.error("Upload error:", err.message);
     res.status(500).json({ error: "Upload failed." });
   }
 });
