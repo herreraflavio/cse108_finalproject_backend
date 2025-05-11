@@ -57,7 +57,10 @@ mongoose
     useNewUrlParser: true,
     useUnifiedTopology: true,
   })
-  .then(() => console.log("✅ Connected to MongoDB Atlas"))
+  .then(() => {
+    console.log("✅ Connected to MongoDB Atlas");
+    initCounter();
+  })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 // ————————————————
@@ -87,6 +90,19 @@ const ensureAuth = (req, res, next) => {
   next();
 };
 
+// start conter
+const UploadCounter = require("./models/UploadCounter");
+
+async function initCounter() {
+  const exists = await UploadCounter.findOne({ name: "global" });
+  if (!exists) {
+    await UploadCounter.create({ name: "global", count: 0 });
+    console.log("📦 Upload counter initialized");
+  } else {
+    console.log("ℹ️ Upload counter already exists");
+  }
+}
+
 // ————————————————
 // Your existing REST routes
 // ————————————————
@@ -110,7 +126,7 @@ app.use(
   require("./routes/search/UserProfile")
 );
 app.use("/search/self", ensureAuth, require("./routes/search/UserProfile"));
-app.use("/uploads/images", require("./routes/uploads/Images"));
+app.use("/uploads/images", ensureAuth, require("./routes/uploads/Images"));
 
 // Simple “who am I?” endpoint
 app.get("/me", ensureAuth, async (req, res) => {

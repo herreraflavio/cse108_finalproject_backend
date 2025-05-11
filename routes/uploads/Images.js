@@ -77,6 +77,9 @@ const path = require("path");
 
 const router = express.Router();
 
+const UploadCounter = require("../../models/UploadCounter");
+const MAX_UPLOADS = 200;
+
 /* ─── Debugging .env ────────────────────────────────────────────── */
 const BUCKET = process.env.AWS_S3_BUCKET;
 const REGION = process.env.AWS_REGION;
@@ -102,7 +105,7 @@ if (!ACCESS_KEY || !SECRET_KEY) {
 }
 
 /* ─── multer config ─────────────────────────────────────────────── */
-const MAX_MB = 25;
+const MAX_MB = 11;
 const ALLOW = ["image/png", "image/jpeg", "image/webp"];
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -149,6 +152,25 @@ router.post("/", upload.array("files", 10), async (req, res) => {
       return res.status(400).json({ error: "No files received." });
     }
 
+    const incomingCount = req.files?.length || 0;
+
+    // 1. Get current count
+    const counterDoc = await UploadCounter.findOne({ name: "global" });
+
+    if (!counterDoc) {
+      return res.status(500).json({ error: "Upload counter not initialized." });
+    }
+
+    const newTotal = counterDoc.count + incomingCount;
+
+    // 2. Reject if exceeds limit
+    if (newTotal > MAX_UPLOADS) {
+      return res.status(403).json({
+        error: "Upload limit reached.",
+        remaining: MAX_UPLOADS - counterDoc.count,
+      });
+    }
+
     const uploads = await Promise.all(
       req.files.map(async (file) => {
         const ext = path.extname(file.originalname).toLowerCase();
@@ -169,6 +191,15 @@ router.post("/", upload.array("files", 10), async (req, res) => {
       })
     );
 
+    // 4. Atomically increment counter
+    await UploadCounter.updateOne(
+      { name: "global" },
+      { $inc: { count: incomingCount } }
+    );
+
+    console.log(newTotal);
+
+    console.log(uploads);
     res.json({ uploads });
   } catch (err) {
     console.error("Upload error:", err.message);
