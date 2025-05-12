@@ -17,31 +17,38 @@ const Conversation = require("./models/Conversation");
 const app = express();
 app.set("trust proxy", 1);
 
-// ————————————————
-// HTTP + WebSocket setup
-// ————————————————
 const server = http.createServer(app);
+// const io = new Server(server, {
+//   cors: {
+//     origin: [
+//       "http://localhost:3000",
+//       "https://cse108.flavioherrera.com",
+//       "https://cse108-finalproject-frontend.vercel.app",
+//     ],
+//     credentials: true,
+//   },
+// });
+
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:3000",
+//       "https://cse108.flavioherrera.com",
+//       "https://cse108-finalproject-frontend.vercel.app",
+//     ],
+//     credentials: true,
+//   })
+// );
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:3000",
-      "https://cse108.flavioherrera.com",
-      "https://cse108-finalproject-frontend.vercel.app",
-    ],
+    origin: true,
     credentials: true,
   },
 });
 
-// ————————————————
-// CORS + JSON + Static
-// ————————————————
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://cse108.flavioherrera.com",
-      "https://cse108-finalproject-frontend.vercel.app",
-    ],
+    origin: true,
     credentials: true,
   })
 );
@@ -49,9 +56,6 @@ app.use("/assets", express.static(path.join(__dirname, "assets")));
 app.use(express.json());
 app.use(cookieParser());
 
-// ————————————————
-// MongoDB
-// ————————————————
 mongoose
   .connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
@@ -63,9 +67,6 @@ mongoose
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-// ————————————————
-// Session (for your REST routes)
-// ————————————————
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -80,9 +81,6 @@ const sessionMiddleware = session({
 });
 app.use(sessionMiddleware);
 
-// ————————————————
-// Auth guard for REST
-// ————————————————
 const ensureAuth = (req, res, next) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not authenticated" });
@@ -90,7 +88,6 @@ const ensureAuth = (req, res, next) => {
   next();
 };
 
-// start conter
 const UploadCounter = require("./models/UploadCounter");
 
 async function initCounter() {
@@ -103,9 +100,6 @@ async function initCounter() {
   }
 }
 
-// ————————————————
-// Your existing REST routes
-// ————————————————
 app.use("/test", ensureAuth, require("./routes/test"));
 app.use("/auth/register", require("./routes/auth/Register"));
 app.use("/auth/login", require("./routes/auth/Login"));
@@ -128,7 +122,6 @@ app.use(
 app.use("/search/self", ensureAuth, require("./routes/search/UserProfile"));
 app.use("/uploads/images", require("./routes/uploads/Images"));
 
-// Simple “who am I?” endpoint
 app.get("/me", ensureAuth, async (req, res) => {
   try {
     const user = await User.findById(req.session.userId).select(
@@ -142,12 +135,6 @@ app.get("/me", ensureAuth, async (req, res) => {
   }
 });
 
-// ————————————————
-// Chat history: paginated
-// GET /api/chats/:userId?page=1
-// ————————————————
-// server.js (or your routes file)
-
 app.get("/api/chats/:userId", ensureAuth, async (req, res) => {
   const otherUserId = req.params.userId;
   const me = req.session.userId;
@@ -155,30 +142,27 @@ app.get("/api/chats/:userId", ensureAuth, async (req, res) => {
   const limit = 50;
 
   try {
-    // 1) Load the conversation, populating each message.sender
     const convo = await Conversation.findOne({
       participants: { $all: [me, otherUserId] },
     })
       .populate({
         path: "messages.sender",
-        select: "username profile_picture", // only bring back these fields
+        select: "username profile_picture",
       })
-      .lean(); // gives us plain JS objects
+      .lean();
 
     if (!convo) {
       return res.json({ messages: [] });
     }
 
-    // 2) Sort messages newest-first and slice out the requested page
     const sorted = convo.messages
-      .slice() // copy so we don’t mutate the original
+      .slice()
       .sort((a, b) => b.timestamp - a.timestamp);
 
     const pageOfMsgs = sorted.slice((page - 1) * limit, page * limit);
 
-    // 3) Optionally—reverse back to oldest-first for your UI
     const formatted = pageOfMsgs.reverse().map((m) => ({
-      sender: m.sender, // { _id, username, profile_picture }
+      sender: m.sender,
       content: m.content,
       imageUrls: m.imageUrls,
       timestamp: m.timestamp,
@@ -191,9 +175,6 @@ app.get("/api/chats/:userId", ensureAuth, async (req, res) => {
   }
 });
 
-// ————————————————
-// Socket.IO JWT handshake
-// ————————————————
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token;
   if (!token) return next(new Error("unauthorized"));
@@ -206,28 +187,20 @@ io.use((socket, next) => {
   }
 });
 
-// ————————————————
-// Socket.IO event handlers
-// ————————————————
-
 io.on("connection", (socket) => {
   const me = socket.userId;
   console.log(`✅ Socket connected: user ${me}`);
 
-  // join your private room
   socket.join(me);
 
-  // also join all existing conversation rooms
   Conversation.find({ participants: me })
     .then((convos) => {
       convos.forEach((c) => socket.join(c._id.toString()));
     })
     .catch(console.error);
 
-  // handle sending a DM
   socket.on("sendDM", async ({ toUserId, content, imageUrls }) => {
     try {
-      // 1) Persist the raw message to MongoDB
       const msgDoc = {
         sender: me,
         content,
@@ -243,12 +216,10 @@ io.on("connection", (socket) => {
         { upsert: true }
       );
 
-      // 2) Load the sender’s profile so we can broadcast username & avatar
       const senderProfile = await User.findById(me).select(
         "username profile_picture"
       );
 
-      // 3) Build the enriched message object
       const broadcastMsg = {
         sender: {
           _id: me,
@@ -260,7 +231,6 @@ io.on("connection", (socket) => {
         timestamp: msgDoc.timestamp,
       };
 
-      // 4) Emit to both participants
       io.to(toUserId).emit("receiveDM", broadcastMsg);
       io.to(me).emit("receiveDM", broadcastMsg);
     } catch (err) {
@@ -273,9 +243,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// ————————————————
-// Start server
-// ————————————————
 const PORT = process.env.PORT || 9000;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);

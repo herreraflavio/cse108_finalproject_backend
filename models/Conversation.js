@@ -1,9 +1,6 @@
-// models/Conversation.js
-
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-/** Sub-document schema for each chat message */
 const MessageSchema = new Schema(
   {
     sender: {
@@ -11,10 +8,10 @@ const MessageSchema = new Schema(
       ref: "User",
       required: true,
     },
-    // NEW – array of S3 URLs
+
     imageUrls: {
       type: [String],
-      default: [], // always present, even if no images
+      default: [],
     },
     content: {
       type: String,
@@ -25,7 +22,7 @@ const MessageSchema = new Schema(
       type: Date,
       default: Date.now,
     },
-    // optional: track who has read this message
+
     readBy: [
       {
         type: Schema.Types.ObjectId,
@@ -36,7 +33,6 @@ const MessageSchema = new Schema(
   { _id: false }
 );
 
-/** Main schema: one document per conversation */
 const ConversationSchema = new Schema(
   {
     participants: [
@@ -45,15 +41,14 @@ const ConversationSchema = new Schema(
         ref: "User",
         required: true,
       },
-    ], // expect exactly 2 entries here
+    ],
     messages: [MessageSchema],
   },
   {
-    timestamps: true, // adds createdAt / updatedAt
+    timestamps: true,
   }
 );
 
-// ensure we only ever have two participants per conversation
 ConversationSchema.path("participants").validate((participants) => {
   return Array.isArray(participants) && participants.length === 2;
 }, "A conversation must have exactly two participants.");
