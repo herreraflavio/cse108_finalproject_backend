@@ -79,10 +79,12 @@ const path = require("path");
 const router = express.Router();
 
 /* ─── Debugging .env ────────────────────────────────────────────── */
-const BUCKET = process.env.AWS_S3_BUCKET;
+const BUCKET = process.env.AWS_S3_BUCKET_DEV;
 const REGION = process.env.AWS_REGION;
-const ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID;
-const SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const ACCESS_KEY = process.env.AWS_ACCESS_KEY_ID_DEV;
+const SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY_DEV;
+
+console.log(BUCKET, REGION, ACCESS_KEY, SECRET_KEY);
 
 console.log("ENVIRONMENT DEBUG:");
 console.log("  AWS_S3_BUCKET       =", BUCKET);
