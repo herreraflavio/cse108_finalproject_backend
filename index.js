@@ -20,6 +20,11 @@ const UploadCounter = require("./models/UploadCounter");
 const app = express();
 app.set("trust proxy", 1);
 
+// ─── 0) HEALTH-CHECK ENDPOINT ─────────────────────────────────────────────
+// Respond 200 to GET / and HEAD / so Render’s healthcheck passes
+app.get("/", (req, res) => res.sendStatus(200));
+app.head("/", (req, res) => res.sendStatus(200));
+
 // ─── 1) LOG *every* incoming request ─────────────────────────────────────
 app.use((req, res, next) => {
   console.log("\n===== INCOMING REQUEST =====");
@@ -28,71 +33,45 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── 2) CORS SETUP + LOGGING ──────────────────────────────────────────────
+// ─── 2) CORS SETUP ─────────────────────────────────────────────────────────
 const corsOptions = {
   origin: (origin, callback) => {
     console.log(`[CORS] incoming Origin: ${origin}`);
-    // allow all for now:
+    if (!origin) {
+      // no Origin header (e.g. healthcheck, curl) → skip CORS
+      return callback(null, false);
+    }
+    // browser request → allow
     callback(null, true);
   },
   credentials: true,
+  methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
 };
 app.use(cors(corsOptions));
 
-// ─── 3) LOG *every* response’s CORS headers ───────────────────────────────
-app.use((req, res, next) => {
-  const _writeHead = res.writeHead;
-  res.writeHead = function (statusCode, headers) {
-    console.log("----- OUTGOING RESPONSE -----");
-    console.log(`Status: ${statusCode}`);
-    console.log("CORS response headers:", {
-      "Access-Control-Allow-Origin": res.getHeader(
-        "Access-Control-Allow-Origin"
-      ),
-      "Access-Control-Allow-Credentials": res.getHeader(
-        "Access-Control-Allow-Credentials"
-      ),
-      "Access-Control-Allow-Methods": res.getHeader(
-        "Access-Control-Allow-Methods"
-      ),
-      "Access-Control-Allow-Headers": res.getHeader(
-        "Access-Control-Allow-Headers"
-      ),
-    });
-    _writeHead.apply(this, arguments);
-  };
-  next();
-});
-
-// ─── 4) GENERAL MIDDLEWARE ────────────────────────────────────────────────
+// ─── 3) GENERAL MIDDLEWARE ────────────────────────────────────────────────
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan("dev"));
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
-// ─── 5) MONGOOSE CONNECTION ───────────────────────────────────────────────
+// ─── 4) MONGOOSE CONNECTION ───────────────────────────────────────────────
 mongoose
-  .connect(process.env.MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ Connected to MongoDB Atlas");
-    initCounter();
+    return UploadCounter.findOne({ name: "global" }).then((exists) => {
+      if (!exists) {
+        console.log("📦 Initializing upload counter");
+        return UploadCounter.create({ name: "global", count: 0 });
+      }
+      console.log("ℹ️ Upload counter exists");
+    });
   })
   .catch((err) => console.error("❌ MongoDB connection error:", err));
 
-async function initCounter() {
-  const exists = await UploadCounter.findOne({ name: "global" });
-  if (!exists) {
-    await UploadCounter.create({ name: "global", count: 0 });
-    console.log("📦 Upload counter initialized");
-  } else {
-    console.log("ℹ️ Upload counter already exists");
-  }
-}
-
-// ─── 6) SESSION SETUP ────────────────────────────────────────────────────
+// ─── 5) SESSION SETUP ────────────────────────────────────────────────────
 const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET,
   resave: false,
@@ -105,10 +84,7 @@ const sessionMiddleware = session({
     maxAge: 1000 * 60 * 60 * 24,
   },
 });
-app.use((req, res, next) => {
-  console.log("[SESSION] initializing session middleware");
-  sessionMiddleware(req, res, next);
-});
+app.use((req, res, next) => sessionMiddleware(req, res, next));
 
 // ─── 7) AUTH MIDDLEWARE ──────────────────────────────────────────────────
 const ensureAuth = (req, res, next) => {
