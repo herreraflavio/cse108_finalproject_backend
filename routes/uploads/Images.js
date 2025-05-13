@@ -126,7 +126,7 @@ const path = require("path");
 
 const router = express.Router();
 const UploadCounter = require("../../models/UploadCounter");
-const MAX_UPLOADS = 1000;
+const MAX_UPLOADS = 20;
 
 /* ─── Debugging .env ────────────────────────────────────────────── */
 const BUCKET = process.env.AWS_S3_BUCKET_DEV;
